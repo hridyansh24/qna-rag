@@ -1,0 +1,69 @@
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { ShieldCheck } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { Input } from '../components/ui/input';
+import { Card, CardContent, CardHeader } from '../components/ui/card';
+
+export default function LoginPage() {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await api.post<{ access_token: string }>('/auth/login', { username, password });
+      localStorage.setItem('token', data.access_token);
+      navigate('/courses');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <ThemeToggle className="fixed top-4 right-4" />
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <span className="mb-4 grid h-10 w-10 place-items-center rounded-xl bg-accent text-on-accent">
+            <ShieldCheck size={20} aria-hidden />
+          </span>
+          <h1 className="text-2xl font-bold text-fg">Admin Login</h1>
+          <p className="text-fg-muted text-sm mt-1">Course Q&amp;A Administration</p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+            />
+            {error && <p className="text-danger text-sm">{error}</p>}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Signing in…' : 'Sign In'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

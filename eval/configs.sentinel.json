@@ -1,0 +1,16 @@
+{
+  "course_id": 1,
+  "baseline": {
+    "ingestion_profile": "sliding-window",
+    "similarity_threshold": 0.35,
+    "system_prompt": "Only use the information provided in the tagged context to answer questions. If the context does not contain enough information to answer, say so rather than guessing.",
+    "generation_model": "qwen2.5:1.5b"
+  },
+  "comparisons": [
+    {
+      "dimension": "system_prompt",
+      "label": "sentinel-prompt",
+      "system_prompt": "Only use the information provided in the tagged context to answer questions. If the context does not contain enough information to answer, say so rather than guessing. If the context does not contain enough information, reply with exactly INSUFFICIENT_CONTEXT and nothing else."
+    }
+  ]
+}

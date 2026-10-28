@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Semantic color tokens (T8). Components use only these, through the
+ * Tailwind colors in tailwind.config.ts (bg-surface, text-fg-muted,
+ * bg-accent/15, …); no raw palette utilities outside this file.
+ *
+ * Values are RGB channels so Tailwind's opacity modifiers work. Every text
+ * token is at least 4.5:1 (WCAG 2.1 AA) on canvas, surface, surface-sunken
+ * and surface-hover, and on its own /15 tint, in both themes.
+ *
+ * <html data-theme> is set before first paint by the script in index.html,
+ * then kept in sync by lib/theme.ts.
+ */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: 245 246 250;
+  --surface: 255 255 255;
+  --surface-sunken: 248 249 252;
+  --surface-hover: 238 240 246;
+  --border: 223 227 236;
+  --border-strong: 197 204 217;
+  --fg: 18 24 38;
+  --fg-secondary: 55 65 81;
+  --fg-muted: 91 100 119;
+  --accent: 79 70 229;
+  --accent-hover: 67 56 202;
+  --on-accent: 255 255 255;
+  --accent-text: 67 56 202;
+  --success: 3 107 79;
+  --warning: 146 64 14;
+  --danger: 185 28 28;
+  --danger-solid: 220 38 38;
+  --ai: 146 64 14;
+  --highlight: 253 230 138;
+  --ring: 79 70 229;
+  --shadow: 18 24 38;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --canvas: 11 16 32;
+  --surface: 19 26 44;
+  --surface-sunken: 14 20 36;
+  --surface-hover: 28 37 57;
+  --border: 39 51 73;
+  --border-strong: 58 71 98;
+  --fg: 241 245 249;
+  --fg-secondary: 203 213 225;
+  --fg-muted: 148 163 184;
+  --accent: 79 70 229;
+  --accent-hover: 91 82 240;
+  --on-accent: 255 255 255;
+  --accent-text: 165 180 252;
+  --success: 110 231 183;
+  --warning: 252 211 77;
+  --danger: 252 165 165;
+  --danger-solid: 220 38 38;
+  --ai: 252 211 77;
+  --highlight: 133 77 14;
+  --ring: 129 140 248;
+  --shadow: 0 0 0;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: rgb(var(--canvas));
+  color: rgb(var(--fg));
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A visible focus state on every interactive element, for keyboard users. */
+:focus-visible {
+  outline: 2px solid rgb(var(--ring));
+  outline-offset: 2px;
+}

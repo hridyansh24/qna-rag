@@ -1,0 +1,157 @@
+# Production stack for the VM (docs/design-rag.md §9.2). The deploy job copies this file to
+# /srv/app/docker-compose.yml and runs it with CI_REGISTRY_IMAGE and IMAGE_TAG
+# exported; secrets come from /srv/app/.env, which exists only on the VM.
+#
+# Differences from docker-compose.yml: nginx and backend run the images CI
+# built instead of building from source, there are no bind mounts and no
+# --reload, APP_ENV is production (no NetID dev login), and only nginx's port
+# 80 is published. MySQL, Redis and the RAG services stay on the compose
+# network, each with a named volume so a redeploy keeps its data.
+
+services:
+  nginx:
+    image: ${CI_REGISTRY_IMAGE}/nginx:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - qna_network
+
+  backend:
+    image: ${CI_REGISTRY_IMAGE}/backend:${IMAGE_TAG}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=production
+    volumes:
+      - resource_files:/data/resources
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Started, not healthy: the board must answer while Infinity downloads
+      # its models on first boot. The RAG clients return 503 until then.
+      ollama:
+        condition: service_started
+      infinity:
+        condition: service_started
+      chromadb:
+        condition: service_started
+    networks:
+      - qna_network
+    # Migrations first, or a fresh database waits forever for a schema. One
+    # uvicorn process: GENERATION_LOCK and the background tasks assume a
+    # single process (§8.1).
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # --- RAG services. No ports are published.
+
+  ollama:
+    image: ollama/ollama:0.35.1
+    restart: unless-stopped
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=30m
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  infinity:
+    image: michaelf34/infinity:0.0.77-cpu
+    restart: unless-stopped
+    command: v2
+    environment:
+      # The VM serves both models: embedding-alt and the graded re-run need
+      # gte-Qwen2. The default is both, so a VM .env without the line still
+      # serves them; a laptop never uses this file.
+      - INFINITY_MODEL_ID=${INFINITY_MODEL_ID:-sentence-transformers/all-MiniLM-L6-v2;Alibaba-NLP/gte-Qwen2-1.5B-instruct}
+      - INFINITY_PORT=7997
+      - INFINITY_ENGINE=torch
+    volumes:
+      - hf_cache:/app/.cache
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7997/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      # First boot downloads about 6 GB of models.
+      start_period: 900s
+
+  chromadb:
+    image: chromadb/chroma:1.5.9
+    restart: unless-stopped
+    volumes:
+      - chroma_data:/data
+    networks:
+      - qna_network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /api/v2/heartbeat HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: qna
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "app_user", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  redis:
+    image: redis:7.0-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+volumes:
+  mysql_data:
+  redis_data:
+  ollama_models:
+  hf_cache:
+  chroma_data:
+  resource_files:
+
+networks:
+  qna_network:
+    driver: bridge

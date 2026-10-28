@@ -1,0 +1,155 @@
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/student/dist:/usr/share/nginx/html/student:ro
+      - ./frontend/staff/dist:/usr/share/nginx/html/staff:ro
+      - ./frontend/admin/dist:/usr/share/nginx/html/admin:ro
+    depends_on:
+      - backend
+    networks:
+      - qna_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    # On a fresh database the backend's startup waits (retrying in-process)
+    # until `alembic upgrade head` has created the schema; the restart policy
+    # additionally covers hard crashes.
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=development
+    volumes:
+      - ./backend:/app
+      - resource_files:/data/resources
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # Started, not healthy: the board must work while a model is still
+      # downloading. The RAG clients return 503 until the services answer.
+      ollama:
+        condition: service_started
+      infinity:
+        condition: service_started
+      chromadb:
+        condition: service_started
+    networks:
+      - qna_network
+    command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  # --- RAG services (docs/design-rag.md §9.2). No ports are published: the
+  # backend reaches them over qna_network only.
+
+  ollama:
+    image: ollama/ollama:0.35.1
+    environment:
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_KEEP_ALIVE=30m
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  infinity:
+    image: michaelf34/infinity:0.0.77-cpu
+    # The only published build is amd64; on Apple Silicon it runs emulated.
+    platform: linux/amd64
+    command: v2
+    environment:
+      # ';'-separated. Laptops default to MiniLM only (gte-Qwen2-1.5B needs
+      # ~6.5 GB); the 16 GB VM's .env lists both models.
+      - INFINITY_MODEL_ID=${INFINITY_MODEL_ID:-sentence-transformers/all-MiniLM-L6-v2}
+      - INFINITY_PORT=7997
+      # The CPU image defaults to the ONNX "optimum" engine; torch runs the
+      # models' own sentence-transformers pooling (last-token for gte-Qwen2).
+      - INFINITY_ENGINE=torch
+    volumes:
+      - hf_cache:/app/.cache
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7997/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      # First boot downloads the models (gte-Qwen2 is several GB).
+      start_period: 600s
+
+  chromadb:
+    image: chromadb/chroma:1.5.9
+    volumes:
+      - chroma_data:/data
+    networks:
+      - qna_network
+    healthcheck:
+      # The image has bash but no curl or wget.
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /api/v2/heartbeat HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ' 200 ' <&3",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: qna
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "app_user", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+
+  redis:
+    image: redis:7.0-alpine
+    networks:
+      - qna_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 512mb --maxmemory-policy allkeys-lru
+
+volumes:
+  mysql_data:
+  ollama_models:
+  hf_cache:
+  chroma_data:
+  resource_files:
+
+networks:
+  qna_network:
+    driver: bridge

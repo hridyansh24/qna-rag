@@ -1,0 +1,42 @@
+{
+  "course_id": 1,
+  "runs": {
+    "embedding-alt": {
+      "1": 9,
+      "2": 10,
+      "3": 11,
+      "4": 12
+    },
+    "sliding-window": {
+      "1": 1,
+      "2": 2,
+      "3": 3,
+      "4": 4
+    },
+    "type-tailored": {
+      "1": 5,
+      "2": 6,
+      "3": 7,
+      "4": 8
+    }
+  },
+  "accepted_posts": {
+    "18": null,
+    "17": null,
+    "6": null,
+    "7": 7,
+    "8": 8,
+    "3": 3,
+    "5": 5,
+    "4": 4,
+    "2": null,
+    "1": 1
+  },
+  "commits": {
+    "backend/app/services/rag/": "bcdc23da6160f22e232095a77403ec9d14193148",
+    "backend/app/config.py": "bcdc23da6160f22e232095a77403ec9d14193148",
+    "docker-compose.prod.yml": "7426651a6f403204e4906f9047f03c9b09129526",
+    "scripts/pull_models.sh": "a9dd927cc67a92c7fcb500673d1563af0ba8327f",
+    "eval/configs.json": "d892eac58ce7b3d817339b35f59dc2078cce490b"
+  }
+}
